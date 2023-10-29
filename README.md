@@ -48,10 +48,11 @@ Placeholders are not case-sensitive.
 Display an image rather than text.
 
 To do this, set the `DisplayedText` to start with **`IMG:`** immediately followed by an absolute path to the file to use.
-![Download SubfolderWatermarks in Visual Studio](https://github.com/tan00001/SubfolderWatermarks/blob/main/docs/DownloadScreenshot.png)
 
 ## Installation
 You can install SubfolderWatermarks by going to the "Extensions" menu on the Visual Studio menu bar: 
+![Download SubfolderWatermarks in Visual Studio](https://github.com/tan00001/SubfolderWatermarks/blob/main/docs/DownloadScreenshot.png)
+
 You may also download SubfolderWatermarks from [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ProgramountInc.SubfolderWatermarks).
 
 
