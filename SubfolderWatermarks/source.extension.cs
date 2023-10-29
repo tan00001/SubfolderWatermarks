@@ -18,7 +18,7 @@ namespace SubfolderWatermarks
         public const string ProfileObjectName = "General";
         public const string Description = @"Add a configurable watermark to the editor for files in specific project subfolders.";
         public const string Language = "en-US";
-        public const string Version = "1.8.2";
+        public const string Version = "1.8.3";
         public const string Author = "Programount Inc.";
         public const string Tags = "";
     }

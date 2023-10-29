@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="SubfolderWatermarks.983b151f-4a54-43ba-9927-f9ec0f4f5cff" Version="1.8.2" Language="en-US" Publisher="Programount Inc." />
+        <Identity Id="SubfolderWatermarks.983b151f-4a54-43ba-9927-f9ec0f4f5cff" Version="1.8.3" Language="en-US" Publisher="Programount Inc." />
         <DisplayName>Subfolder Watermarks</DisplayName>
         <Description xml:space="preserve">Add a configurable watermark to the editor for files in specific project subfolders.</Description>
         <MoreInfo>https://github.com/tan00001/SubfolderWatermarks</MoreInfo>

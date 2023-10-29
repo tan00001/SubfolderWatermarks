@@ -4,6 +4,7 @@
 // </copyright>
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -11,6 +12,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using EnvDTE;
+
+using EnvDTE80;
 
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -27,7 +30,9 @@ namespace SubfolderWatermarks
         private readonly WaterMarkControl _root;
         private readonly IWpfTextView _view;
         private readonly IAdornmentLayer _adornmentLayer;
-        private string _fileName = null;
+        private string _filePath = null;
+        private bool? _checkFolderOptionsResult = null;
+        private string _displayedText = null;
 #pragma warning restore SA1309 // Field names should not begin with underscore
 
         public WaterMarkAdornment(IWpfTextView view)
@@ -84,26 +89,42 @@ namespace SubfolderWatermarks
             }
         }
 
-        private static string GetProjectPathFromMiscFile(Solution solution, string folderPath, string curFilePath)
+        private static (string, string) GetProjectFromMiscFile(IEnumerable<Project> projects, string folderPath, string curFilePath)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            foreach (Project proj in solution.Projects)
+            foreach (Project proj in projects)
             {
                 // Misc. project has empty FullName
                 if (string.IsNullOrEmpty(proj.FullName))
                 {
+                    if (proj.Kind == ProjectKinds.vsProjectKindSolutionFolder)
+                    {
+#pragma warning disable VSTHRD010 // Invoke single-threaded types on Main thread
+                        (string subProjectName, string subProjectPath) = GetProjectFromMiscFile(
+                            proj.ProjectItems.Cast<ProjectItem>()
+                                .Where(i => i?.SubProject != null)
+                                .Select(i => i.SubProject),
+                            folderPath,
+                            curFilePath);
+#pragma warning restore VSTHRD010 // Invoke single-threaded types on Main thread
+                        if (!string.IsNullOrEmpty(subProjectName))
+                        {
+                            return (subProjectName, subProjectPath);
+                        }
+                    }
+
                     continue;
                 }
 
                 var projectPath = Path.GetDirectoryName(proj.FullName);
                 if (curFilePath.StartsWith(Path.Combine(projectPath, folderPath), StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return projectPath;
+                    return (proj.Name, projectPath);
                 }
             }
 
-            return null;
+            return (null, null);
         }
 
         private void OnUpdateRequested()
@@ -132,21 +153,21 @@ namespace SubfolderWatermarks
             Messenger.UpdateAdornment -= new Messenger.UpdateAdornmentEventHandler(OnUpdateRequested);
         }
 
-        private string GetFileName()
+        private string GetFilePath()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            if (_fileName == null)
+            if (_filePath == null)
             {
                 _view.TextBuffer.Properties.TryGetProperty(typeof(IVsTextBuffer), out IVsTextBuffer buffer);
 
                 if (buffer is IPersistFileFormat pff)
                 {
-                    pff.GetCurFile(out _fileName, out _);
+                    pff.GetCurFile(out _filePath, out _);
                 }
             }
 
-            return _fileName;
+            return _filePath;
         }
 
         private bool TryLoadOptions()
@@ -378,18 +399,21 @@ namespace SubfolderWatermarks
             _root.WaterMarkImage.Visibility = Visibility.Hidden;
             _root.WaterMarkText.Visibility = Visibility.Visible;
 
-            string displayedText = options.UsingReplacements() ? MakeReplacements(options) : options.DisplayedText;
-
-            if (_root.WaterMarkText.Content is string waterMarktext && !waterMarktext.Equals(displayedText))
+            if (string.IsNullOrEmpty(_displayedText))
             {
-                _root.WaterMarkText.Content = displayedText;
-            }
-            else if (_root.WaterMarkText.Content is TextBlock waterMarkTextBlock && !waterMarkTextBlock.Text.Equals(displayedText))
-            {
-                waterMarkTextBlock.Text = displayedText;
+                _displayedText = options.UsingReplacements() ? MakeReplacements(options) : options.DisplayedText;
             }
 
-            if (!string.IsNullOrWhiteSpace(displayedText))
+            if (_root.WaterMarkText.Content is string waterMarktext && !waterMarktext.Equals(_displayedText))
+            {
+                _root.WaterMarkText.Content = _displayedText;
+            }
+            else if (_root.WaterMarkText.Content is TextBlock waterMarkTextBlock && !waterMarkTextBlock.Text.Equals(_displayedText))
+            {
+                waterMarkTextBlock.Text = _displayedText;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_displayedText))
             {
                 LoadTextSettings(options);
                 return true;
@@ -402,7 +426,7 @@ namespace SubfolderWatermarks
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            var curFile = GetFileName();
+            var curFile = GetFilePath();
 
             if (string.IsNullOrWhiteSpace(curFile))
             {
@@ -455,81 +479,101 @@ namespace SubfolderWatermarks
             var solution = ProjectHelpers.Dte2.Solution;
             var projItem = solution.FindProjectItem(curFile);
 
-            if (options.UseCurrentProjectName() && projItem != null)
+            if (!string.IsNullOrEmpty(projItem?.ContainingProject.FullName))
             {
-                try
-                {
-                    displayedText = displayedText.Replace(OptionPageGrid.CurrentProjectName, projItem.ContainingProject.Name);
-                }
-                catch (Exception exc)
-                {
-                    OutputError("Unable to get the name of the project the current file is in.", exc);
-                    return string.Empty;
-                }
+                displayedText = SetProjNameAndPathInDisplayedText(projItem.ContainingProject.Name, Path.GetDirectoryName(projItem.ContainingProject.FullName));
             }
-
-            if (options.UseCurrentFilePathInProject())
+            else
             {
-                try
+                if (GetProjNameAndPathInDisplayedTextByRelativePath(out var projectName, out var projectFolderPath))
                 {
-                    if (!MakeReplacementWithRelativePaths())
-                    {
-                        if (!MakeReplacementWithAbsolutePaths())
-                        {
-                            displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
-                        }
-                    }
+                    displayedText = SetProjNameAndPathInDisplayedText(projectName, projectFolderPath);
                 }
-                catch (Exception exc)
+                else
                 {
-                    OutputError($"Unable to get the name of the dirctory from the current file path '{curFile}'.", exc);
-                    return string.Empty;
+                    if (options.UseCurrentProjectName())
+                    {
+                        displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
+                    }
+
+                    if (options.UseCurrentFilePathInProject())
+                    {
+                        displayedText = MakeReplacementWithAbsolutePaths();
+                    }
                 }
             }
 
             return displayedText;
 
-            bool MakeReplacementWithRelativePaths()
+            string SetProjNameAndPathInDisplayedText(string projectName, string projectFolderPath)
             {
-                foreach (var folderPath in options.GetRelativeContainingFolders())
+                if (options.UseCurrentProjectName())
                 {
-                    string projectFolderPath;
-
-                    if (!string.IsNullOrEmpty(projItem?.ContainingProject.FullName))
+                    try
                     {
-                        projectFolderPath = Path.GetDirectoryName(projItem.ContainingProject.FullName);
-                        if (curFile.StartsWith(projectFolderPath, StringComparison.InvariantCultureIgnoreCase))
-                        {
-                            displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(projectFolderPath.Length));
-                            return true;
-                        }
+                        return displayedText.Replace(OptionPageGrid.CurrentProjectName, projectName);
                     }
-                    else
+                    catch (Exception exc)
                     {
-                        projectFolderPath = GetProjectPathFromMiscFile(solution, folderPath, curFile);
-                        if (!string.IsNullOrEmpty(projectFolderPath))
-                        {
-                            displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(projectFolderPath.Length));
-                            return true;
-                        }
+                        OutputError("Unable to get the name of the project the current file is in.", exc);
+                        return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
                     }
                 }
 
-                return false;
+                if (options.UseCurrentFilePathInProject())
+                {
+                    try
+                    {
+                        if (curFile.StartsWith(projectFolderPath, StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(projectFolderPath.Length));
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        OutputError($"Unable to get the name of the dirctory from the current file path '{curFile}'.", exc);
+                        return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
+                    }
+                }
+
+                return displayedText;
             }
 
-            bool MakeReplacementWithAbsolutePaths()
+            bool GetProjNameAndPathInDisplayedTextByRelativePath(out string projectName, out string projectFolderPath)
             {
-                foreach (var folderPath in options.GetAbsoluteContainingFolders())
+                foreach (var folderPath in options.GetRelativeContainingFolders())
                 {
-                    if (curFile.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                    (projectName, projectFolderPath) = GetProjectFromMiscFile(solution.Projects.Cast<Project>(), folderPath, curFile);
+                    if (!string.IsNullOrEmpty(projectName))
                     {
-                        displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(folderPath.Length));
                         return true;
                     }
                 }
 
+                projectName = string.Empty;
+                projectFolderPath = string.Empty;
                 return false;
+            }
+
+            string MakeReplacementWithAbsolutePaths()
+            {
+                try
+                {
+                    foreach (var folderPath in options.GetAbsoluteContainingFolders())
+                    {
+                        if (curFile.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(folderPath.Length));
+                        }
+                    }
+
+                    return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
+                }
+                catch (Exception exc)
+                {
+                    OutputError($"Unable to get the name of the dirctory from the current file path '{curFile}'.", exc);
+                    return displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
+                }
             }
         }
 
@@ -601,6 +645,11 @@ namespace SubfolderWatermarks
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
+            if (_checkFolderOptionsResult != null)
+            {
+                return _checkFolderOptionsResult.Value;
+            }
+
             var absoluteFolders = option.GetAbsoluteContainingFolders();
             var relativeFolders = option.GetRelativeContainingFolders();
             if (absoluteFolders.Count == 0 && relativeFolders.Count == 0)
@@ -608,7 +657,7 @@ namespace SubfolderWatermarks
                 return true;
             }
 
-            var curFile = GetFileName();
+            var curFile = GetFilePath();
             if (string.IsNullOrEmpty(curFile))
             {
                 return false;
@@ -618,6 +667,7 @@ namespace SubfolderWatermarks
             {
                 if (curFile.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
                 {
+                    _checkFolderOptionsResult = true;
                     return true;
                 }
             }
@@ -636,18 +686,26 @@ namespace SubfolderWatermarks
 
                     if (curFile.StartsWith(fullFolderPath, StringComparison.InvariantCultureIgnoreCase))
                     {
+                        _checkFolderOptionsResult = true;
                         return true;
                     }
                 }
                 else
                 {
-                    if (!string.IsNullOrEmpty(GetProjectPathFromMiscFile(solution, folderPath, curFile)))
+                    var stopWatch = new Stopwatch();
+                    stopWatch.Start();
+                    (string projectName, _) = GetProjectFromMiscFile(solution.Projects.Cast<Project>(), folderPath, curFile);
+                    stopWatch.Stop();
+                    System.Diagnostics.Debug.WriteLine(projectName + ": " + stopWatch.ElapsedTicks);
+                    if (!string.IsNullOrEmpty(projectName))
                     {
+                        _checkFolderOptionsResult = true;
                         return true;
                     }
                 }
             }
 
+            _checkFolderOptionsResult = false;
             return false;
         }
 
