@@ -15,7 +15,7 @@
 SubfolderWatermarks displays a text watermark over the Visual Studio editor for files in specific project subfolders.
 For example, you can mark auto-generated files with watermarks so that you do not accidentally edit them by mistake.
 
-![VS screenshot showing highlighted watermark](./Assets/vswatermark-example.png)
+![VS screenshot showing highlighted watermark](./Assets/SubfolderWatermarks-Example.png)
 
 The highlighted text may appear as part of the text in the editor but is floating above it. It stays put when you scroll.
 
@@ -25,7 +25,7 @@ Size, position, color, and text are fully configurable.
 
 Go to **Tools** &gt; **Options** and select **Watermarks**
 
-![Screenshot of Water Mark settings in the Options dialog](./Assets/vswatermark-options.png)
+![Screenshot of Water Mark settings in the Options dialog](./Assets/SubfolderWatermarks-Options.png)
 
 ### Use placeholders
 
@@ -34,10 +34,10 @@ This can help you (or anyone looking at the screen) differentiate files more eas
 
 Simply enter one of the following in the configured `Displayed text` and it will be replaced when shown in the editor.
 
+- **`${currentFilePathInProject}`** - is replaced with the relative path of the file in the project (within the solution). This is the default.
 - **`${currentFileName}`** - is replaced with the name of the current file.
 - **`${currentDirectoryName}`** - is replaced with the name of the directory (on disk) that contains the current file.
 - **`${currentProjectName}`** - is replaced with the name of the project (within the solution) the file is in.
-- **`${currentFilePathInProject}`** - is replaced with the relative path of the file in the project (within the solution).
 
 If any of the placeholders can't be resolved, they're replaced with an empty string.  
 You can use multiple placeholders at once and combine them with other text.  

@@ -474,13 +474,9 @@ namespace SubfolderWatermarks
                 {
                     if (!MakeReplacementWithRelativePaths())
                     {
-                        foreach (var folderPath in options.GetAbsoluteContainingFolders())
+                        if (!MakeReplacementWithAbsolutePaths())
                         {
-                            if (curFile.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(folderPath.Length));
-                                break;
-                            }
+                            displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, string.Empty);
                         }
                     }
                 }
@@ -516,6 +512,20 @@ namespace SubfolderWatermarks
                             displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(projectFolderPath.Length));
                             return true;
                         }
+                    }
+                }
+
+                return false;
+            }
+
+            bool MakeReplacementWithAbsolutePaths()
+            {
+                foreach (var folderPath in options.GetAbsoluteContainingFolders())
+                {
+                    if (curFile.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        displayedText = displayedText.Replace(OptionPageGrid.CurrentFilePathInProject, curFile.Substring(folderPath.Length));
+                        return true;
                     }
                 }
 
